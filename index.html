@@ -4,7 +4,11 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Task Manager PWA</title>
-<link rel="manifest" href="/manifest.json">
+<link rel="manifest" href="manifest.json">
+
+<!-- Flatpickr CSS -->
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
+
 <style>
 body { font-family: Arial,sans-serif; max-width:600px; margin:auto; padding:15px; background:#f5f5f5; }
 h1{text-align:center;margin-bottom:15px;}
@@ -38,7 +42,7 @@ h2{margin-top:25px;}
 <h1>Task Manager PWA</h1>
 <input type="text" id="taskTitle" placeholder="Task Title" required>
 <textarea id="taskDesc" placeholder="Optional Description"></textarea>
-<input type="datetime-local" id="taskDate" required>
+<input type="text" id="taskDate" placeholder="Select Date & Time" required>
 <button id="addTaskBtn">Add Task</button>
 <button id="clearActiveBtn" style="background-color:#f44336;">Clear Active Tasks</button>
 
@@ -54,12 +58,15 @@ h2{margin-top:25px;}
     <h3>Edit Task</h3>
     <input type="text" id="editTitle" placeholder="Task Title">
     <textarea id="editDesc" placeholder="Optional Description"></textarea>
-    <input type="datetime-local" id="editDate">
+    <input type="text" id="editDate" placeholder="Select Date & Time">
     <button id="saveEditBtn">Save Changes</button>
   </div>
 </div>
 
 <div id="toastContainer"></div>
+
+<!-- Flatpickr JS -->
+<script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
 
 <script>
 // === LocalStorage & Elements ===
@@ -96,7 +103,6 @@ function renderTasks(){
     const div=document.createElement('div');
     div.className='task '+(task.status||'');
     const t=getTimeLeft(task.datetime);
-    // Countdown color & flash
     let color='green',flash=false;
     if(task.status==='pending'){
       if(t.diff<3600000){color='red';flash=true;}
@@ -158,13 +164,12 @@ function updateCountdowns(){
   });
 }
 
-// Notify task due
 function notifyTaskDue(task){
   if(!task.notified){
     if('serviceWorker' in navigator && navigator.serviceWorker.controller){
       navigator.serviceWorker.controller.postMessage({type:'task-due',id:task.id,title:task.title});
     } else { alert(`Task Due: ${task.title}`); }
-    task.notified=true; // prevent repeated notifications
+    task.notified=true;
   }
 }
 
@@ -197,13 +202,43 @@ setInterval(updateCountdowns,1000);
 
 // === Register Service Worker ===
 if('serviceWorker' in navigator){
-  navigator.serviceWorker.register('/service-worker.js')
+  navigator.serviceWorker.register('service-worker.js')
   .then(reg=>console.log('Service Worker Registered'))
   .catch(err=>console.log('SW registration failed',err));
 }
 
-// Request Notification Permission
+// === Request Notification Permission ===
 if('Notification' in window){ Notification.requestPermission(); }
+
+// === PWA Install Prompt ===
+let deferredPrompt;
+window.addEventListener('beforeinstallprompt', (e) => {
+  e.preventDefault();
+  deferredPrompt = e;
+  const installBtn = document.createElement('button');
+  installBtn.innerText = 'Install App';
+  installBtn.style.position='fixed';
+  installBtn.style.bottom='20px';
+  installBtn.style.right='20px';
+  installBtn.style.padding='12px 20px';
+  installBtn.style.background='#4CAF50';
+  installBtn.style.color='white';
+  installBtn.style.border='none';
+  installBtn.style.borderRadius='6px';
+  installBtn.style.zIndex='1000';
+  document.body.appendChild(installBtn);
+  installBtn.onclick = async () => {
+    installBtn.remove();
+    deferredPrompt.prompt();
+    const { outcome } = await deferredPrompt.userChoice;
+    deferredPrompt = null;
+  };
+});
+
+// Initialize Flatpickr
+flatpickr("#taskDate", { enableTime:true, dateFormat:"Y-m-d H:i" });
+flatpickr("#editDate", { enableTime:true, dateFormat:"Y-m-d H:i" });
 </script>
+
 </body>
 </html>
