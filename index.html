@@ -1,0 +1,209 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Task Manager PWA</title>
+<link rel="manifest" href="/manifest.json">
+<style>
+body { font-family: Arial,sans-serif; max-width:600px; margin:auto; padding:15px; background:#f5f5f5; }
+h1{text-align:center;margin-bottom:15px;}
+input,textarea,button{width:100%;padding:12px;margin:6px 0;border-radius:6px;border:1px solid #ccc;font-size:16px;box-sizing:border-box;}
+textarea{resize:vertical;}
+button{background-color:#4CAF50;color:white;border:none;cursor:pointer;margin-top:10px;}
+button:hover{background-color:#45a049;}
+.task{background:#fff;padding:12px;margin:10px 0;border-radius:6px;display:flex;flex-direction:column;justify-content:space-between;border-left:6px solid green;word-wrap:break-word;}
+.task.done{border-left-color:#2196F3;text-decoration:line-through;color:#555;}
+.task.skipped{border-left-color:#f44336;color:#999;font-style:italic;}
+.task.upcoming{box-shadow:0 0 8px #ffeb3b;}
+.task.flash { animation: glow 1s infinite alternate; }
+@keyframes glow { from { box-shadow: 0 0 5px red;} to { box-shadow: 0 0 15px red;} }
+.task .actions{display:flex;flex-wrap:wrap;margin-top:8px;}
+.task .actions button{margin:4px 4px 0 0;font-size:14px;flex:1 1 45%;padding:8px;}
+h2{margin-top:25px;}
+.history{font-size:14px;color:#555;border-left:6px solid #999;padding:8px;}
+.history.done{border-left-color:#2196F3;}
+.history.skipped{border-left-color:#f44336;}
+.modal{display:none;position:fixed;z-index:999;left:0;top:0;width:100%;height:100%;overflow:auto;background-color:rgba(0,0,0,0.4);}
+.modal-content{background:#fefefe;margin:15% auto;padding:20px;border:1px solid #888;width:90%;max-width:400px;border-radius:8px;}
+.close{color:#aaa;float:right;font-size:24px;font-weight:bold;cursor:pointer;}
+.close:hover{color:black;}
+#toastContainer{position:fixed;top:10px;right:10px;z-index:1000;}
+.toast{background:#333;color:#fff;padding:12px 20px;margin-top:10px;border-radius:6px;min-width:200px;opacity:0.95;animation:fadeInOut 3s forwards;}
+@keyframes fadeInOut{0%{opacity:0;transform:translateY(-20px);}10%{opacity:0.95;transform:translateY(0);}90%{opacity:0.95;transform:translateY(0);}100%{opacity:0;transform:translateY(-20px);}}
+</style>
+</head>
+<body>
+
+<h1>Task Manager PWA</h1>
+<input type="text" id="taskTitle" placeholder="Task Title" required>
+<textarea id="taskDesc" placeholder="Optional Description"></textarea>
+<input type="datetime-local" id="taskDate" required>
+<button id="addTaskBtn">Add Task</button>
+<button id="clearActiveBtn" style="background-color:#f44336;">Clear Active Tasks</button>
+
+<h2>Tasks</h2>
+<div id="tasksContainer"></div>
+
+<h2>History</h2>
+<div id="historyContainer"></div>
+
+<div id="editModal" class="modal">
+  <div class="modal-content">
+    <span class="close" id="modalClose">&times;</span>
+    <h3>Edit Task</h3>
+    <input type="text" id="editTitle" placeholder="Task Title">
+    <textarea id="editDesc" placeholder="Optional Description"></textarea>
+    <input type="datetime-local" id="editDate">
+    <button id="saveEditBtn">Save Changes</button>
+  </div>
+</div>
+
+<div id="toastContainer"></div>
+
+<script>
+// === LocalStorage & Elements ===
+const tasksContainer=document.getElementById('tasksContainer');
+const historyContainer=document.getElementById('historyContainer');
+const taskTitle=document.getElementById('taskTitle');
+const taskDesc=document.getElementById('taskDesc');
+const taskDate=document.getElementById('taskDate');
+const addTaskBtn=document.getElementById('addTaskBtn');
+const clearActiveBtn=document.getElementById('clearActiveBtn');
+const editModal=document.getElementById('editModal');
+const modalClose=document.getElementById('modalClose');
+const editTitle=document.getElementById('editTitle');
+const editDesc=document.getElementById('editDesc');
+const editDate=document.getElementById('editDate');
+const saveEditBtn=document.getElementById('saveEditBtn');
+const toastContainer=document.getElementById('toastContainer');
+
+let tasks=JSON.parse(localStorage.getItem('tasks'))||[];
+let history=JSON.parse(localStorage.getItem('history'))||[];
+let currentEditId=null;
+
+// === Helpers ===
+function save(){localStorage.setItem('tasks',JSON.stringify(tasks));localStorage.setItem('history',JSON.stringify(history));}
+function showToast(msg){const t=document.createElement('div');t.className='toast';t.innerText=msg;toastContainer.appendChild(t);setTimeout(()=>t.remove(),3000);}
+function getTimeLeft(dateTime){const diff=new Date(dateTime)-new Date();if(diff<=0)return {text:"Past due",diff:0};const d=Math.floor(diff/1000/60/60/24);const h=Math.floor(diff/1000/60/60)%24;const m=Math.floor(diff/1000/60)%60;const s=Math.floor(diff/1000)%60;return {text:`${d}d ${h}h ${m}m ${s}s`,diff};}
+
+// === Render Tasks & History ===
+function renderTasks(){
+  tasksContainer.innerHTML='';
+  tasks.sort((a,b)=>new Date(a.datetime)-new Date(b.datetime));
+  const now=new Date();
+  tasks.forEach(task=>{
+    const div=document.createElement('div');
+    div.className='task '+(task.status||'');
+    const t=getTimeLeft(task.datetime);
+    // Countdown color & flash
+    let color='green',flash=false;
+    if(task.status==='pending'){
+      if(t.diff<3600000){color='red';flash=true;}
+      else if(t.diff<86400000)color='orange';
+    }
+    if(flash)div.classList.add('flash');
+    div.innerHTML=`<div>
+      <strong>${task.title}</strong><br>
+      ${task.description?task.description+'<br>':''}
+      <small>${new Date(task.datetime).toLocaleString()}</small><br>
+      <strong id="countdown-${task.id}" style="color:${color}">${t.text}</strong>
+    </div>
+    <div class="actions">
+      <button onclick="markDone(${task.id})">Done</button>
+      <button onclick="markSkip(${task.id})">Skip</button>
+      <button onclick="openEditModal(${task.id})">Edit</button>
+      <button onclick="deleteTask(${task.id})">Delete</button>
+    </div>`;
+    tasksContainer.appendChild(div);
+  });
+  renderHistory();
+}
+
+function renderHistory(){
+  historyContainer.innerHTML='';
+  history.forEach(h=>{
+    const div=document.createElement('div');
+    div.className='task history '+h.status;
+    div.innerHTML=`<div>
+      <strong>${h.title}</strong><br>
+      ${h.description?h.description+'<br>':''}
+      <small>${new Date(h.datetime).toLocaleString()}</small>
+      <br>Status: ${h.status}
+    </div>
+    <div class="actions">
+      <button onclick="reactivateTask(${h.id})">Reactivate</button>
+      <button onclick="deleteHistory(${h.id})">Delete</button>
+    </div>`;
+    historyContainer.appendChild(div);
+  });
+}
+
+// === Countdown Update & Notifications ===
+function updateCountdowns(){
+  tasks.forEach(task=>{
+    const el=document.getElementById(`countdown-${task.id}`);
+    if(el){
+      const t=getTimeLeft(task.datetime);
+      let color='green',flash=false;
+      if(task.status==='pending'){
+        if(t.diff<3600000){color='red';flash=true;notifyTaskDue(task);}
+        else if(t.diff<86400000)color='orange';
+      }
+      el.innerText=t.text;
+      el.style.color=color;
+      const taskDiv=el.closest('.task');
+      if(flash)taskDiv.classList.add('flash'); else taskDiv.classList.remove('flash');
+    }
+  });
+}
+
+// Notify task due
+function notifyTaskDue(task){
+  if(!task.notified){
+    if('serviceWorker' in navigator && navigator.serviceWorker.controller){
+      navigator.serviceWorker.controller.postMessage({type:'task-due',id:task.id,title:task.title});
+    } else { alert(`Task Due: ${task.title}`); }
+    task.notified=true; // prevent repeated notifications
+  }
+}
+
+// === Task Actions ===
+function addTask(){
+  if(!taskTitle.value||!taskDate.value)return showToast('Title and date/time required');
+  const id=Date.now();
+  tasks.push({id,title:taskTitle.value,description:taskDesc.value,datetime:taskDate.value,status:'pending',notified:false});
+  save();renderTasks();taskTitle.value='';taskDesc.value='';taskDate.value='';showToast('Task added!');
+}
+function markDone(id){const t=tasks.find(x=>x.id===id);t.status='done';history.push({...t});tasks=tasks.filter(x=>x.id!==id);save();renderTasks();showToast('Task marked done!');}
+function markSkip(id){const t=tasks.find(x=>x.id===id);t.status='skipped';history.push({...t});tasks=tasks.filter(x=>x.id!==id);save();renderTasks();showToast('Task skipped!');}
+function deleteTask(id){tasks=tasks.filter(x=>x.id!==id);save();renderTasks();showToast('Task deleted!');}
+function deleteHistory(id){history=history.filter(x=>x.id!==id);save();renderTasks();showToast('History item deleted!');}
+function reactivateTask(id){const h=history.find(x=>x.id===id);tasks.push({...h,id:Date.now(),status:'pending',notified:false});save();renderTasks();showToast('Task reactivated!');}
+function clearActive(){tasks=[];save();renderTasks();showToast('Active tasks cleared!');}
+
+// === Edit Modal ===
+function openEditModal(id){currentEditId=id;const t=tasks.find(x=>x.id===id);editTitle.value=t.title;editDesc.value=t.description;editDate.value=t.datetime;editModal.style.display='block';}
+modalClose.onclick=()=>editModal.style.display='none';
+window.onclick=e=>{if(e.target==editModal)editModal.style.display='none';}
+saveEditBtn.onclick=()=>{if(!editTitle.value||!editDate.value)return showToast('Title and date/time required');const t=tasks.find(x=>x.id===currentEditId);t.title=editTitle.value;t.description=editDesc.value;t.datetime=editDate.value;t.notified=false;save();renderTasks();editModal.style.display='none';showToast('Task updated!');}
+
+// === Event Listeners ===
+addTaskBtn.addEventListener('click',addTask);
+clearActiveBtn.addEventListener('click',clearActive);
+
+renderTasks();
+setInterval(updateCountdowns,1000);
+
+// === Register Service Worker ===
+if('serviceWorker' in navigator){
+  navigator.serviceWorker.register('/service-worker.js')
+  .then(reg=>console.log('Service Worker Registered'))
+  .catch(err=>console.log('SW registration failed',err));
+}
+
+// Request Notification Permission
+if('Notification' in window){ Notification.requestPermission(); }
+</script>
+</body>
+</html>
