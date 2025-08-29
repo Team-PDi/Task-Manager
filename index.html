@@ -4,6 +4,8 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Task Manager</title>
+<!-- Flatpickr CSS -->
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
 <style>
   body { font-family: Arial,sans-serif; max-width:600px; margin:auto; padding:15px; background:#f5f5f5; }
   h1{text-align:center;margin-bottom:15px;}
@@ -28,6 +30,10 @@
   #toastContainer{position:fixed;top:10px;right:10px;z-index:1000;}
   .toast{background:#333;color:#fff;padding:12px 20px;margin-top:10px;border-radius:6px;min-width:200px;opacity:0.95;animation:fadeInOut 3s forwards;}
   @keyframes fadeInOut{0%{opacity:0;transform:translateY(-20px);}10%{opacity:0.95;transform:translateY(0);}90%{opacity:0.95;transform:translateY(0);}100%{opacity:0;transform:translateY(-20px);}}
+  @media(max-width:400px){
+    .task .actions button{flex:1 1 100%;}
+    input,textarea,button{font-size:14px;padding:10px;}
+  }
 </style>
 </head>
 <body>
@@ -35,7 +41,7 @@
 <h1>Task Manager</h1>
 <input type="text" id="taskTitle" placeholder="Task Title" required>
 <textarea id="taskDesc" placeholder="Optional Description"></textarea>
-<input type="datetime-local" id="taskDate" required>
+<input type="text" id="taskDate" placeholder="Select Date & Time" required>
 <button id="addTaskBtn">Add Task</button>
 <button id="clearActiveBtn" style="background-color:#f44336;">Clear Active Tasks</button>
 
@@ -51,14 +57,19 @@
     <h3>Edit Task</h3>
     <input type="text" id="editTitle" placeholder="Task Title">
     <textarea id="editDesc" placeholder="Optional Description"></textarea>
-    <input type="datetime-local" id="editDate">
+    <input type="text" id="editDate" placeholder="Select Date & Time">
     <button id="saveEditBtn">Save Changes</button>
   </div>
 </div>
 
 <div id="toastContainer"></div>
 
+<!-- Flatpickr JS -->
+<script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
 <script>
+flatpickr("#taskDate", { enableTime:true, dateFormat:"Y-m-d H:i" });
+flatpickr("#editDate", { enableTime:true, dateFormat:"Y-m-d H:i" });
+
 const tasksContainer=document.getElementById('tasksContainer');
 const historyContainer=document.getElementById('historyContainer');
 const taskTitle=document.getElementById('taskTitle');
@@ -98,7 +109,6 @@ function renderTasks(){
     const div=document.createElement('div');
     div.className='task '+(task.status||'');
     const t=getTimeLeft(task.datetime);
-    // Color code countdown
     let countdownColor='green';
     if(task.status==='pending'){
       if(t.diff<3600000)countdownColor='red';
@@ -148,7 +158,7 @@ function addTask(){
   if(!taskTitle.value||!taskDate.value)return showToast('Title and date/time required');
   const id=Date.now();
   tasks.push({id,title:taskTitle.value,description:taskDesc.value,datetime:taskDate.value,status:'pending'});
-  save();renderTasks();taskTitle.value='';taskDesc.value='';taskDate.value='';showToast('Task added!');
+  save();renderTasks();taskTitle.value='';taskDesc.value='';taskDate._flatpickr.clear();showToast('Task added!');
 }
 function markDone(id){const t=tasks.find(x=>x.id===id);t.status='done';history.push({...t});tasks=tasks.filter(x=>x.id!==id);save();renderTasks();showToast('Task marked done!');}
 function markSkip(id){const t=tasks.find(x=>x.id===id);t.status='skipped';history.push({...t});tasks=tasks.filter(x=>x.id!==id);save();renderTasks();showToast('Task skipped!');}
